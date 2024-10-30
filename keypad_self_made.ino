@@ -1,25 +1,17 @@
 #include "Keypad.h"
 #include "Encoder.h"
 #include <SPI.h>
-#include <Wire.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
+#include "U8glib.h"
+
 //#include <SD.h>
+
+U8GLIB_SSD1306_128X64 u8g(U8G_I2C_OPT_NONE | U8G_I2C_OPT_DEV_0);  // I2C / TWI
+
 
 #define SD_CS_PIN 18
 
 #define SCREEN_WIDTH 128  // OLED display width, in pixels
 #define SCREEN_HEIGHT 64  // OLED display height, in pixels
-
-// Declaration for an SSD1306 display connected to I2C (SDA, SCL pins)
-// The pins for I2C are defined by the Wire-library.
-// On an arduino UNO:       A4(SDA), A5(SCL)
-// On an arduino MEGA 2560: 20(SDA), 21(SCL)
-// On an arduino LEONARDO:   2(SDA),  3(SCL), ...
-#define OLED_RESET -1        // Reset pin # (or -1 if sharing Arduino reset pin)
-#define SCREEN_ADDRESS 0x3C  ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
-
 #define FONT_SIZE_UNIT 8
 #define FONT_SCALE 2
 
@@ -186,7 +178,7 @@ const unsigned char kiki_bitmapKIKI[] PROGMEM = {
   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 };
 // 'KIKI2', 128x64px
-const unsigned char kiki_bitmapKIKI2[] PROGMEM = {
+const unsigned char kiki_bitmapKIKI2[] U8G_PROGMEM = {
   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0xf0, 0x08, 0x18, 0x0f, 0xe0, 0x00, 0x00, 0x00, 0x00,
@@ -268,9 +260,16 @@ bool timer1 = 0;
 
 //File myFile;
 
+void u8g_prepare(void) {
+  u8g.setFont(u8g_font_6x10);
+  u8g.setFontRefHeightExtendedText();
+  u8g.setDefaultForegroundColor();
+  u8g.setFontPosTop();
+}
+
 void setup() {
   Serial.begin(9600);
-  
+
   delay(3000);
 
   // Serial.println("Initializing SD card...");
@@ -282,54 +281,44 @@ void setup() {
   // }
   // Serial.println("initialization done.");
 
-
-
-  display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS);
-
   keypad.initKeypad();
   encoder.initEncoder();
+  u8g_prepare();
   renderMenu();
 }
 
+
 void renderMenu() {
-  display.clearDisplay();
+  u8g.firstPage();
+  do {
+    if (layerIndex == 0) {
+      u8g.drawRFrame(5, (SCREEN_HEIGHT - FONT_SCALE * FONT_SIZE_UNIT) / 2 - 5, SCREEN_WIDTH - 10, FONT_SCALE * FONT_SIZE_UNIT + 8, 5);
+      u8g.setScale2x2();
+      u8g.drawStr(5, (SCREEN_HEIGHT - FONT_SCALE * FONT_SIZE_UNIT) / 4 - 1, menuOptions[menuIndex].c_str());
 
-  if (layerIndex == 0) {
-    display.setTextSize(FONT_SCALE);
-    display.setTextColor(SSD1306_WHITE);  // Draw white text
-    display.cp437(true);                  // Use full 256 char 'Code Page 437' font
-
-    display.setCursor(10, (SCREEN_HEIGHT - FONT_SCALE * FONT_SIZE_UNIT) / 2);
-    display.print(menuOptions[menuIndex]);
-    display.drawRect(5, (SCREEN_HEIGHT - FONT_SCALE * FONT_SIZE_UNIT) / 2 - 5, display.width() - 10, FONT_SCALE * FONT_SIZE_UNIT + 8, SSD1306_WHITE);
-
-    if (menuIndex > 0) {
-      display.setCursor(10, (SCREEN_HEIGHT - FONT_SCALE * FONT_SIZE_UNIT) / 2 - FONT_SCALE * FONT_SIZE_UNIT - 8);
-      display.print(menuOptions[menuIndex - 1]);
+      if (menuIndex > 0) {
+        u8g.drawStr(5, ((SCREEN_HEIGHT - FONT_SCALE * FONT_SIZE_UNIT) / 2 - FONT_SCALE * FONT_SIZE_UNIT - 8) / 2, menuOptions[menuIndex - 1].c_str());
+      }
+      if (menuIndex < NUM_OF_OPTIONS - 1) {
+        u8g.drawStr(5, ((SCREEN_HEIGHT + FONT_SCALE * FONT_SIZE_UNIT) / 2 + 6) / 2, menuOptions[menuIndex + 1].c_str());
+      }
+      u8g.undoScale();
+    } else if (layerIndex == 1) {
+      renderPage();
     }
-    if (menuIndex < NUM_OF_OPTIONS - 1) {
-      display.setCursor(10, (SCREEN_HEIGHT + FONT_SCALE * FONT_SIZE_UNIT) / 2 + 6);
-      display.print(menuOptions[menuIndex + 1]);
-    }
-  } else if (layerIndex == 1) {
-    renderPage();
-  }
-
-  display.display();
+  } while (u8g.nextPage());
 }
 
 void renderPage() {
-  display.setTextSize(1);
-  display.setTextColor(SSD1306_WHITE);  // Draw white text
-  display.cp437(true);                  // Use full 256 char 'Code Page 437' font
+  u8g.undoScale();
 
   for (byte i = 0; i < 6; i++) {
     shortcut shc;
     memcpy_P(&shc, &shortcuts[menuIndex][pageIndex + i], sizeof shc);
-    display.setCursor(0, i * (FONT_SIZE_UNIT + 2));
-    display.write(shc.key);
-    display.setCursor(16, i * (FONT_SIZE_UNIT + 2));
-    display.print(shc.name);
+    char key[2] = " ";
+    key[0] = shc.key;
+    u8g.drawStr(0, i * (FONT_SIZE_UNIT + 2), key);
+    u8g.drawStr(16, i * (FONT_SIZE_UNIT + 2), shc.name);
   }
 }
 
@@ -361,6 +350,7 @@ void loop() {
     renderMenu();
   }
   if (x != previousPressedKeys) {
+
     // if (x == "M" && menuIndex < NUM_OF_OPTIONS - 1) {
     //   menuIndex++;
     // } else if (x == "D" && menuIndex > 0) {
@@ -368,25 +358,29 @@ void loop() {
     // }
     // renderMenu();
     if (x.length()) {
-      display.clearDisplay();
-      display.drawBitmap(0, 0, kiki_bitmapallArray[1], SCREEN_WIDTH, SCREEN_HEIGHT, SSD1306_WHITE);
       timer1 = 1;
-      display.display();
       displayedKey = x[0];
+      u8g.firstPage();
+      do {
+        u8g.drawBitmapP(0, 0, 128/8, 64, kiki_bitmapallArray[1]);
+      } while (u8g.nextPage());
     }
     Serial.println("Key Event");
     previousPressedKeys = x;
   }
 
-  if (counter > 200) {
-    display.clearDisplay();
-    display.drawBitmap(0, 0, kiki_bitmapallArray[0], SCREEN_WIDTH, SCREEN_HEIGHT, SSD1306_WHITE);
-    if (displayedKey) {
-      display.setTextSize(2);
-      display.setCursor(100, 10);
-      display.write(displayedKey);
-    }
-    display.display();
+  if (counter > 300) {
+    u8g.firstPage();
+    do {
+        u8g.drawBitmapP(0, 0, 128/8, 64, kiki_bitmapallArray[0]);
+      if (displayedKey) {
+        u8g.setScale2x2();
+        char key[2] = " ";
+        key[0] = displayedKey;
+        u8g.drawStr(50, 5, key);
+        u8g.undoScale();
+      }
+    } while (u8g.nextPage());
     timer1 = 0;
   }
 }
